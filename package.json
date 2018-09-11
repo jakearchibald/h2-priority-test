@@ -1,0 +1,10 @@
+{
+  "name": "h2-priority-test",
+  "private": true,
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "stream-throttle": "^0.1.3"
+  }
+}
