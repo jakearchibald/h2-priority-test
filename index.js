@@ -1,40 +1,18 @@
-const { Throttle } = require('stream-throttle');
-const { Duplex } = require('stream');
+const { Transform } = require('stream');
 const tls = require('tls');
 const http2 = require('http2');
+const zlib = require('zlib');
 
 // Create the HTTP/2 connection.
-const client = http2.connect('https://large-html-css-test.glitch.me', {
-  // This is where I throttle the connection.
-  // Only reading is throttled.
-  createConnection(authority) {
-    const connection = tls.connect(443, authority.hostname, {
-      allowHalfOpen: true,
-      ALPNProtocols: ['h2'],
-      servername: authority.hostname,
-    });
-
-    const throttledRead = connection.pipe(new Throttle({rate: 20 * 1024}));
-
-    const throttledConnection = new Duplex({
-      read(size) {
-        throttledRead.read(size);
-        throttledRead.once('data', (chunk) => {
-          this.push(chunk);
-        });
-      },
-      write(chunk, encoding, callback) {
-        connection.write(chunk, encoding, callback);
-      }
-    });
-    return throttledConnection;
-  }
-});
+const client = http2.connect('https://large-html-css-test.glitch.me');
 client.on('error', (err) => console.error(err));
 client.on('connect', () => console.log('Connection established'));
 
 function requestHTML() {
-  const req = client.request({ ':path': '/' }, {
+  const req = client.request({
+    ':path': '/',
+    'Accept-Encoding': 'gzip',
+  }, {
     // weight/parent can be set here, but it seems to have no impact
   });
 
@@ -46,13 +24,19 @@ function requestHTML() {
   let seenChunk = false;
   let seenLink = false;
   const watchFor = '<link rel="stylesheet"';
-  req.setEncoding('utf8');
   let buffer = '';
   let length = 0;
   let start;
 
-  req.on('data', (chunk) => {
-    length += chunk.length;
+  const stream = req.pipe(new Transform({
+    transform(chunk, encoding, callback) {
+      length += chunk.length;
+      this.push(chunk, encoding);
+      callback();
+    }
+  })).pipe(zlib.createGunzip());
+
+  stream.on('data', (chunk) => {
     if (!seenChunk) {
       start = Date.now();
       console.log('Got first HTML chunk');
@@ -78,7 +62,7 @@ function requestHTML() {
     }
   });
 
-  req.on('end', () => {
+  stream.on('end', () => {
     const end = Date.now();
     console.log('Got all HTML. bps:', length / ((end - start) / 1000));
   });
@@ -88,7 +72,10 @@ function requestHTML() {
 function requestCSS(parent, readyCallback) {
   return new Promise((resolve) => {
     console.log('Requesting CSS');
-    const req = client.request({ ':path': '/all.css' }, {
+    const req = client.request({
+      ':path': '/all.css',
+      'Accept-Encoding': 'gzip',
+    }, {
       // Setting the HTML as the parent seems to slow the CSS delivery considerably
       //parent,
       // This doesn't seem to have an impact
@@ -107,10 +94,15 @@ function requestCSS(parent, readyCallback) {
     });
 
     let seenChunk = false;
-    req.setEncoding('utf8');
+    const stream = req.pipe(new Transform({
+      transform(chunk, encoding, callback) {
+        length += chunk.length;
+        this.push(chunk, encoding);
+        callback();
+      }
+    })).pipe(zlib.createGunzip());
 
-    req.on('data', (chunk) => {
-      length += chunk.length;
+    stream.on('data', (chunk) => {
       if (!seenChunk) {
         start = Date.now();
         console.log('Got first CSS chunk');
@@ -118,7 +110,7 @@ function requestCSS(parent, readyCallback) {
       }
     });
 
-    req.on('end', () => {
+    stream.on('end', () => {
       const end = Date.now();
       console.log('Got all CSS. bps', length / ((end - start) / 1000));
       resolve();
