@@ -8,7 +8,7 @@ const client = http2.connect('https://large-html-css-test.glitch.me');
 client.on('error', (err) => console.error(err));
 client.on('connect', () => console.log('Connection established'));
 
-function requestHTML() {
+async function requestHTML() {
   const req = client.request({
     ':path': '/',
     'Accept-Encoding': 'gzip',
@@ -17,8 +17,12 @@ function requestHTML() {
   });
 
   console.log('Requesting HTML');
-  req.on('response', () => {
-    console.log('Got response for HTML');
+
+  const headers = await new Promise((resolve) => {
+    req.on('response', (headers) => {
+      console.log('Got response for HTML');
+      resolve(headers);
+    });
   });
 
   let seenChunk = false;
@@ -28,13 +32,17 @@ function requestHTML() {
   let length = 0;
   let start;
 
-  const stream = req.pipe(new Transform({
+  let stream = req.pipe(new Transform({
     transform(chunk, encoding, callback) {
       length += chunk.length;
       this.push(chunk, encoding);
       callback();
     }
-  })).pipe(zlib.createGunzip());
+  }));
+
+  if (headers['content-encoding']) {
+    stream = stream.pipe(zlib.createGunzip());
+  }
 
   stream.on('data', (chunk) => {
     if (!seenChunk) {
@@ -70,7 +78,7 @@ function requestHTML() {
 }
 
 function requestCSS(parent, readyCallback) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     console.log('Requesting CSS');
     const req = client.request({
       ':path': '/all.css',
@@ -89,18 +97,25 @@ function requestCSS(parent, readyCallback) {
     let length = 0;
     let start;
 
-    req.on('response', () => {
-      console.log('Got response for CSS');
+    const headers = await new Promise((resolve) => {
+      req.on('response', (headers) => {
+        console.log('Got response for HTML');
+        resolve(headers);
+      });
     });
 
     let seenChunk = false;
-    const stream = req.pipe(new Transform({
+    let stream = req.pipe(new Transform({
       transform(chunk, encoding, callback) {
         length += chunk.length;
         this.push(chunk, encoding);
         callback();
       }
-    })).pipe(zlib.createGunzip());
+    }));
+
+    if (headers['content-encoding']) {
+      stream = stream.pipe(zlib.createGunzip());
+    }
 
     stream.on('data', (chunk) => {
       if (!seenChunk) {
