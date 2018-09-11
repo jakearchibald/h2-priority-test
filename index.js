@@ -4,16 +4,18 @@ const http2 = require('http2');
 const zlib = require('zlib');
 
 // Create the HTTP/2 connection.
-const client = http2.connect('https://large-html-css-test.glitch.me');
+const client = http2.connect('https://en.m.wikipedia.org');
 client.on('error', (err) => console.error(err));
 client.on('connect', () => console.log('Connection established'));
 
 async function requestHTML() {
   const req = client.request({
-    ':path': '/',
+    ':path': '/wiki/Barack_Obama',
     'Accept-Encoding': 'gzip',
   }, {
-    // weight/parent can be set here, but it seems to have no impact
+    parent: 0,
+    exclusive: true,
+    weight: 256
   });
 
   console.log('Requesting HTML');
@@ -81,13 +83,13 @@ function requestCSS(parent, readyCallback) {
   return new Promise(async (resolve) => {
     console.log('Requesting CSS');
     const req = client.request({
-      ':path': '/all.css',
+      ':path': '/w/load.php?debug=false&amp;lang=en&amp;modules=ext.cite.styles%7Cmediawiki.hlist%7Cmediawiki.ui.button%2Cicon%7Cskins.minerva.base.reset%2Cstyles%7Cskins.minerva.content.styles%7Cskins.minerva.content.styles.images%7Cskins.minerva.icons.images%7Cskins.minerva.tablet.styles&amp;only=styles&amp;skin=minerva',
       'Accept-Encoding': 'gzip',
     }, {
       // Setting the HTML as the parent seems to slow the CSS delivery considerably
-      //parent,
+      parent,
       // This doesn't seem to have an impact
-      //exclusive: true,
+      exclusive: true,
       // A weight of 256 seems to make the CSS arrive earlier
       weight: 256
     });
